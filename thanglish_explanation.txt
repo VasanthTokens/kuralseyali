@@ -1,0 +1,64 @@
+
+🎤 Part 1: How to pitch it (Thanglish script)
+Opening (10-15 sec — hook them immediately):
+
+"Sir/Madam, namba Tamil Nadu la lakhs of electricians, plumbers, AC technicians irukanga. Ivanga ellarum business panra full ah WhatsApp voice note mூலமா dhaan. Aana problem enna na — customer oru voice note anupranga, andha details ellam chat history la lost aayidum, illa Ramesh mறandhu poiduvaru. Naan build panna project — customer oru voice note anupina udane, adhu automatic ah oru organized 'Job Card' aaki kudukum — Tamil-ilayum English-ilayum."
+
+Problem statement (15 sec):
+
+"Ivanga ku 'proper business app' download pannunga nu sonna, avanga use pannamaten — login, form fill up, ellam avangaluku romba complex. So naan think pannen — avanga already use panra platform-a (WhatsApp) exact ah use pannalam, avangala change pannanum nu vendaam."
+
+Demo walkthrough (30-40 sec, while showing the actual flow):
+
+"Ippo naan oru voice note anupren — 'fan velai seyala, veetla current illa' nu solli. [send it] Ithu Twilio வழியா en server ku varum. Gemini AI andha audio-va transcribe pannும், adhே time la customer peru, problem, location, time ellam extract pannum — oru single API call la. Adhukku apram automatic ah Tamil-um English-um irukura oru Job Card WhatsApp ku reply varum. Same time la, oru live dashboard-layum andha job kaanum."
+
+"Ippo naan andha job-a 'Done' nu mark pannuren dashboard la [click] — udane customer ku automatic ah 'unga velai mudinjidhu' nu Tamil-English rendulayum message pogum. Customer dashboard open pannanum nu avasiyam illa."
+
+Why it's different / the real idea (15 sec):
+
+"En main idea enna na — Tamil Nadu electrician oru Kerala customer kitta irundhu voice note vandhalum, andha language automatic ah detect aagi, Tamil-ku translate aagidum. So oru Tamil electrician India full-layum work panna mudiyum, language problem illama."
+
+Closing line (memorable one-liner):
+
+"Chumma sonna — naan Ramesh ku (illa Mano ku) oru secretary kudutheruken, adhu never sleep pannadhu, and adhukku ஒரு rupee கூட cost illa."
+
+🧑‍⚖️ Part 2: Questions judges will actually ask, and how to answer
+Q1: "Idhu already irukura CRM apps ah irundhu எப்படி different?"
+
+Answer: "CRM apps ellam login, dashboard, typing based ah irukum. Naan target panra audience — chinna electricians, plumbers — ivanga andha apps use panna maten, because avanga ku already WhatsApp voice note dhaan comfortable. Naan avanga behavior-a change pannala, avanga already panra velaiya automatic ah organize pannuren mattum thaan."
+
+Q2: "Idhu scale aaguma? 1000 electricians use pannanum na enna aagum?"
+
+Be honest here — don't oversell: "Ippo iruka version oru single electrician (Mano) ku dhaan build panniruken — proof of concept. Scale panna, naan Twilio sandbox-a irundhu real WhatsApp Business number ku maara vendum, database-a Google Sheets-a irundhu proper database (Firestore/Postgres) ku maara vendum, and multi-technician support add pannanum. Ithellam naan already scope pannirukken as 'next steps'."
+
+Q3: "Free tier apps use pannirukeenga — production ku poyapo enna aagum, cost varuma?"
+
+Answer: "Correct sir, ippo Gemini free tier (500 requests/day), Google Sheets, Twilio sandbox — ellame free ku dhaan test pannen. Production ku poyapo, Twilio WhatsApp Business API ku konjam cost varum (per message), and higher Gemini usage ku paid tier venum. Aana oru small electrician business ku, andha cost negligible — customer volume kammiyா iruக்கும்."
+
+Q4: "AI wrong ah extract pannitta enna aagum? Hallucination handle panreengala?"
+
+Answer: "Naan prompt la clearly specify pannirukken — field clear ah mention aagalana, AI 'null' nu mattum kudukum, guess pannaadhu. Adhukku apram, code level la, ella required fields um irukka nu validate pannuren — ஏதாவது missing na, andha job card silently corrupt aagama, error throw pannum, so wrong data database ku pogadhu."
+
+Q5: "Idhu privacy/security எப்படி handle pannுthu? Customer data safe ah?"
+
+Answer: "Ippo customer phone number, voice note ellam Twilio மற்றும் Google Sheets la store aagudhu — ivanga rendu perume enterprise-level security kொடுக்குறாanga. Production ku poyapo, naan encryption, data retention policy, and consent (customer ku theriyanum ivanga data AI process aagudhu nu) add pannanum — ithu naan innum fully build pannala, aana idhu important nu therinjurukken."
+
+Q6: "Idhu ungaluku personal ah oru problem-a? Yaeng idha build panreenga?"
+
+Answer with a real angle (whatever is genuinely true for you — adapt): "Naan namma area la irukura chinna service providers ivanga business எப்படி run panranga nu paartha — ellame informal, voice note based. Ivanga ku formal software solutions kedaikala, because ella app um English-ilayum typing-ilayum focus pannudhu. Naan andha gap-a fill pannanum nu try pannen."
+
+Q7: "Idhu WhatsApp policy violate pannுma? Twilio sandbox use panreenga, real production ku approved-a?"
+
+Answer: "Ippo naan Twilio's free Sandbox use panren, adhu testing/demo ku dhaan meant pannirukanga — production ku poyapo, Twilio-oda WhatsApp Business API approval process (Meta verification) mூலமா real number vaanganum. Ithu naan already plan pannirukken as the production path."
+
+Q8: "Vera language support panreengala, illa Tamil mattum thaana?"
+
+Answer: "Ippo Tamil + English mattum dhaan build panniruken, aana architecture already language-agnostic ah design pannirukken — prompt la 'detect any Indian language' nu specify pannirukken. So Telugu, Kannada, Malayalam support add panna, oru rendu vari code change mattum podhum — already andha flexibility irukku."
+
+💡 Quick tips for the actual judging round
+Do the live demo first, then explain — judges remember what they see working, more than what you say.
+If something breaks live (network issue, quota), don't panic — say: "Ithu free-tier network dependency, production deployment la ithu solve aagidum" and move to a backup screenshot/video.
+Don't oversell "scale" or "production ready" — judges respect honesty about what's a prototype vs what's fully built. Say clearly: "Idhu working prototype, ithu solve panra real problem clear ah irukku."
+End with the one-liner — memorable closing lines stick in judges' minds when they're scoring 20+ teams.
+Want me to also prep a 60-second version (in case they give you a strict time limit) or a one-page judge handout summarizing all this?
+

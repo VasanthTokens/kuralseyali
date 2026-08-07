@@ -1,0 +1,167 @@
+import twilio from "twilio";
+import googleTTS from "google-tts-api";
+ 
+const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+ 
+const URGENCY_TAMIL = {
+  low: "குறைவு",
+  medium: "நடுத்தரம்",
+  high: "அதிகம்",
+};
+ 
+const PROPERTY_TYPE_TAMIL = {
+  house: "வீடு",
+  shop: "கடை",
+  office: "அலுவலகம்",
+};
+ 
+const STATUS_TAMIL_LABELS = {
+  Pending: "நிலுவையில்",
+  "In Progress": "நடந்து கொண்டிருக்கிறது",
+  Done: "முடிந்தது",
+  pending: "நிலுவையில்",
+  in_progress: "நடந்து கொண்டிருக்கிறது",
+  done: "முடிந்தது ✅",
+};
+ 
+/**
+ * Formats the extracted job card fields into a bilingual (Tamil + English)
+ * WhatsApp confirmation message. Values for issue/location/requested_time
+ * use the *_ta fields for the Tamil block, so it reads fully in Tamil
+ * regardless of what language the customer originally spoke in.
+ *
+ * property_type / appliance_brand / payment_preference are optional extras —
+ * only shown when the customer actually mentioned them, so the card stays
+ * clean for jobs where they weren't given.
+ */
+export function formatJobCardMessage(fields, status = "Pending") {
+  const statusTamil = STATUS_TAMIL_LABELS[status] || status;
+  const urgencyTamil = URGENCY_TAMIL[fields.urgency] || "குறிப்பிடப்படவில்லை";
+  const propertyTypeTamil = PROPERTY_TYPE_TAMIL[fields.property_type];
+ 
+  let tamilCard =
+    `📋 *வேலை அட்டை*\n` +
+    `வாடிக்கையாளர்: ${fields.customer_name || "குறிப்பிடப்படவில்லை"}\n` +
+    `பிரச்சனை: ${fields.issue_ta || fields.issue}\n` +
+    `இடம்: ${fields.location_ta || fields.location || "குறிப்பிடப்படவில்லை"}\n` +
+    `மாற்று தொடர்பு எண்: ${fields.alternate_contact || "இல்லை"}\n` +
+    `கோரப்பட்ட நேரம்: ${fields.requested_time_ta || fields.requested_time || "குறிப்பிடப்படவில்லை"}\n` +
+    `அவசரம்: ${urgencyTamil}`;
+  if (propertyTypeTamil) tamilCard += `\nஇடத்தின் வகை: ${propertyTypeTamil}`;
+  if (fields.appliance_brand) tamilCard += `\nசாதனம்/பிராண்ட்: ${fields.appliance_brand}`;
+  if (fields.payment_preference) tamilCard += `\nபணம் செலுத்தும் முறை: ${fields.payment_preference}`;
+  tamilCard += `\nநிலை: ${statusTamil}`;
+ 
+  let englishCard =
+    `📋 *JOB CARD*\n` +
+    `Customer: ${fields.customer_name || "Not mentioned"}\n` +
+    `Problem: ${fields.issue}\n` +
+    `Location: ${fields.location || "Not mentioned"}\n` +
+    `Alternate contact: ${fields.alternate_contact || "None"}\n` +
+    `Requested time: ${fields.requested_time || "Not mentioned"}\n` +
+    `Urgency: ${fields.urgency || "Not specified"}`;
+  if (fields.property_type) englishCard += `\nProperty type: ${fields.property_type}`;
+  if (fields.appliance_brand) englishCard += `\nAppliance/brand: ${fields.appliance_brand}`;
+  if (fields.payment_preference) englishCard += `\nPayment preference: ${fields.payment_preference}`;
+  englishCard += `\nStatus: ${status}`;
+ 
+  const dashboardLink =
+    `\n\n📊 எல்லா வேலைகளையும் பார்க்க / View all jobs:\n${process.env.DASHBOARD_URL}`;
+ 
+  return `${tamilCard}\n\n---\n\n${englishCard}${dashboardLink}`;
+}
+ 
+/**
+ * Formats a status-change notification (e.g. sent to the customer when
+ * the electrician marks a job In Progress / Done from the dashboard).
+ * `job` is a row object from sheets.js (rowToObject), so fields are
+ * plain English only — this message stays bilingual using what's available.
+ */
+export function formatStatusUpdateMessage(job, newStatus) {
+  const statusTamil = STATUS_TAMIL_LABELS[newStatus] || newStatus;
+  const statusEnglish =
+    { pending: "Pending", in_progress: "In Progress", done: "Done ✅" }[newStatus] || newStatus;
+ 
+  return (
+    `📋 *Job Update / பணி புதுப்பிப்பு*\n\n` +
+    `Customer: ${job.customer_name || "—"}\n` +
+    `Issue: ${job.issue}\n` +
+    `Status: ${statusEnglish}\n\n` +
+    `---\n\n` +
+    `வாடிக்கையாளர்: ${job.customer_name || "—"}\n` +
+    `பிரச்சனை: ${job.issue_ta || job.issue}\n` +
+    `நிலை: ${statusTamil}`
+  );
+}
+ 
+/**
+ * Builds a short, natural spoken-Tamil sentence summarizing the job —
+ * for people who understand spoken Tamil more comfortably than reading it.
+ * Job-related details (problem, location, time, urgency) are spoken first;
+ * secondary/contact details (name, alternate contact) come after.
+ * property_type / appliance_brand / payment_preference are spoken only if
+ * the customer actually mentioned them.
+ */
+export function buildSpokenJobSummary(fields) {
+  const issue = fields.issue_ta || fields.issue;
+  const location = fields.location_ta || fields.location;
+  const requestedTime = fields.requested_time_ta || fields.requested_time;
+  const urgency = URGENCY_TAMIL[fields.urgency];
+  const propertyTypeTamil = PROPERTY_TYPE_TAMIL[fields.property_type];
+  const name = fields.customer_name_ta || fields.customer_name;
+  const altContact = fields.alternate_contact;
+ 
+  // Job-related details first — what the technician needs to act on.
+  let text = `வணக்கம். உங்கள் கோரிக்கை பதிவு செய்யப்பட்டது. பிரச்சனை: ${issue}.`;
+  if (location) text += ` இடம்: ${location}.`;
+  if (requestedTime) text += ` கோரப்பட்ட நேரம்: ${requestedTime}.`;
+  if (urgency) text += ` அவசரம்: ${urgency}.`;
+  if (propertyTypeTamil) text += ` இடத்தின் வகை: ${propertyTypeTamil}.`;
+  if (fields.appliance_brand) text += ` சாதனம்: ${fields.appliance_brand}.`;
+ 
+  // Customer / contact details after — secondary information.
+  if (name) text += ` வாடிக்கையாளர் பெயர்: ${name}.`;
+  if (altContact) text += ` மாற்று தொடர்பு எண்: ${altContact}.`;
+  if (fields.payment_preference) text += ` பணம் செலுத்தும் முறை: ${fields.payment_preference}.`;
+ 
+  return text;
+}
+ 
+/**
+ * Builds a short spoken-Tamil sentence for a status change (In Progress / Done).
+ */
+export function buildSpokenStatusUpdate(job, newStatus) {
+  const statusTamil = STATUS_TAMIL_LABELS[newStatus] || newStatus;
+  return `உங்கள் வேலையின் நிலை புதுப்பிக்கப்பட்டது. பிரச்சனை: ${job.issue_ta || job.issue}. நிலை: ${statusTamil}.`;
+}
+ 
+export async function sendWhatsAppReply(toNumber, message) {
+  await client.messages.create({
+    from: process.env.TWILIO_WHATSAPP_NUMBER,
+    to: toNumber,
+    body: message,
+  });
+}
+ 
+/**
+ * Sends a Tamil voice note using Google Translate's free TTS engine.
+ * Google's endpoint caps each clip at ~200 characters, so
+ * getAllAudioUrls automatically splits longer text into multiple clips —
+ * Twilio supports sending several mediaUrl attachments in one message.
+ */
+export async function sendWhatsAppVoiceNote(toNumber, tamilText) {
+  const audioUrls = googleTTS
+    .getAllAudioUrls(tamilText, {
+      lang: "ta",
+      slow: false,
+      host: "https://translate.google.com",
+    })
+    .map((item) => item.url);
+ 
+  await client.messages.create({
+    from: process.env.TWILIO_WHATSAPP_NUMBER,
+    to: toNumber,
+    mediaUrl: audioUrls,
+  });
+}
+ 

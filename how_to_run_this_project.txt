@@ -1,0 +1,13 @@
+terminal 1:
+
+cd D:\whatsapp-job-card-project\server
+npm start
+
+terminal 2:
+
+ngrok http --url=harness-unawake-suave.ngrok-free.dev 3000
+
+terminal 3:
+
+cd D:\whatsapp-job-card-project\dashboard
+npm run dev
