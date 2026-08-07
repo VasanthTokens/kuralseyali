@@ -1,4 +1,4 @@
-# 📋 Mano's Job Board — WhatsApp Voice-to-Job-Card Converter
+# 📋 kuralseyali — WhatsApp Voice-to-Job-Card Converter
 
 Turn a customer's WhatsApp voice note into an organized, bilingual job card — automatically, with zero app to learn.
 
