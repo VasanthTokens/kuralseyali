@@ -5,7 +5,8 @@ npm start
 
 terminal 2:
 
-ngrok http --url=harness-unawake-suave.ngrok-free.dev 3000
+
+ngrok http --url=<your-ngrok-domain> 3000
 
 terminal 3:
 
