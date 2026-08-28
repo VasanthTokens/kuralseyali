@@ -14,6 +14,8 @@ const STRINGS = {
     minAgo: (m) => `${m} நிமி முன்பு`,
     tabs: { all: "அனைத்தும்", pending: "நிலுவையில்", in_progress: "நடந்து கொண்டிருக்கிறது", done: "முடிந்தது" },
     unknownCustomer: "தெரியாத வாடிக்கையாளர்",
+    phonePlaceholder: "வாடிக்கையாளர் எண்",
+    savePhone: "சேமி",
     startJob: "வேலையைத் தொடங்கு",
     markDone: "முடிந்ததாகக் குறி",
     showOriginal: "அசல் செய்தியைக் காட்டு ▼",
@@ -34,6 +36,8 @@ const STRINGS = {
     minAgo: (m) => `${m}m ago`,
     tabs: { all: "All jobs", pending: "Pending", in_progress: "In progress", done: "Done" },
     unknownCustomer: "Unknown customer",
+    phonePlaceholder: "Customer phone",
+    savePhone: "Save",
     startJob: "Start job",
     markDone: "Mark done",
     showOriginal: "Show original message ▼",
@@ -65,8 +69,10 @@ function timeAgo(seconds, t) {
   return t.minAgo(Math.floor(seconds / 60));
 }
 
-function JobCard({ job, onStatusChange, lang, t }) {
+function JobCard({ job, onStatusChange, onPhoneUpdate, lang, t }) {
   const [expanded, setExpanded] = useState(false);
+  const [phoneInput, setPhoneInput] = useState("");
+  const [savingPhone, setSavingPhone] = useState(false);
   const statusColor = STATUS_COLORS[job.status] || STATUS_COLORS.pending;
   const statusLabel = t.tabs[job.status] || t.tabs.pending;
   const urgencyColor = URGENCY_COLORS[job.urgency];
@@ -105,13 +111,37 @@ function JobCard({ job, onStatusChange, lang, t }) {
 
         <p style={styles.issue}>{issueText}</p>
 
-        <div style={styles.metaRow}>
+                <div style={styles.metaRow}>
           {job.location && <span style={styles.metaItem}>📍 {job.location}</span>}
           {job.requested_time && <span style={styles.metaItem}>🕒 {job.requested_time}</span>}
           {job.alternate_contact && (
             <span style={styles.metaItem}>📞 {job.alternate_contact}</span>
           )}
         </div>
+
+        {job.status !== "done" && (
+          <div style={styles.phoneRow}>
+            <input
+              type="tel"
+              placeholder={t.phonePlaceholder}
+              value={phoneInput}
+              onChange={(e) => setPhoneInput(e.target.value)}
+              style={styles.phoneInput}
+            />
+            <button
+              style={styles.phoneSaveBtn}
+              disabled={savingPhone || !phoneInput.trim()}
+              onClick={async () => {
+                setSavingPhone(true);
+                await onPhoneUpdate(job.id, phoneInput.trim());
+                setSavingPhone(false);
+                setPhoneInput("");
+              }}
+            >
+              {savingPhone ? "…" : t.savePhone}
+            </button>
+          </div>
+        )}
 
         {job.raw_transcript && (
           <button style={styles.transcriptToggle} onClick={() => setExpanded(!expanded)}>
@@ -175,7 +205,7 @@ export default function App() {
     };
   }, []);
 
-  const handleStatusChange = async (jobId, status) => {
+    const handleStatusChange = async (jobId, status) => {
     setJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, status } : j)));
     try {
       await fetch(`${API_BASE}/api/jobs/${jobId}/status`, {
@@ -189,12 +219,41 @@ export default function App() {
     }
   };
 
-  const filteredJobs = filter === "all" ? jobs : jobs.filter((j) => j.status === filter);
+  const handlePhoneUpdate = async (jobId, phone) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/jobs/${jobId}/customer-phone`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone }),
+      });
+      if (res.ok) {
+        fetchJobs();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to update phone number");
+      }
+    } catch (err) {
+      console.error("Failed to update customer phone:", err);
+      alert("Failed to update phone number");
+    }
+  };
+
+    const filteredJobs = filter === "all" ? jobs : jobs.filter((j) => j.status === filter);
   const counts = {
     all: jobs.length,
     pending: jobs.filter((j) => j.status === "pending").length,
     in_progress: jobs.filter((j) => j.status === "in_progress").length,
     done: jobs.filter((j) => j.status === "done").length,
+  };
+
+  // Analytics: jobs created in the last 7 days, total done, and how many
+  // urgent jobs are still open (not yet done) — the numbers Ramesh most  
+  // wants to glance at without opening every card.
+  const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const stats = {
+    thisWeek: jobs.filter((j) => j.created_at && new Date(j.created_at).getTime() >= oneWeekAgo).length,
+    done: counts.done,
+    urgentOpen: jobs.filter((j) => j.urgency === "high" && j.status !== "done").length,
   };
 
   return (
@@ -247,8 +306,15 @@ export default function App() {
           </div>
         )}
 
-        {filteredJobs.map((job) => (
-          <JobCard key={job.id} job={job} onStatusChange={handleStatusChange} lang={lang} t={t} />
+                {filteredJobs.map((job) => (
+          <JobCard
+            key={job.id}
+            job={job}
+            onStatusChange={handleStatusChange}
+            onPhoneUpdate={handlePhoneUpdate}
+            lang={lang}
+            t={t}
+          />
         ))}
       </main>
     </div>
@@ -445,7 +511,30 @@ const styles = {
     color: "#5C574C",
     marginBottom: 6,
   },
-  metaItem: { display: "inline-flex", alignItems: "center" },
+    metaItem: { display: "inline-flex", alignItems: "center" },
+  phoneRow: {
+    display: "flex",
+    gap: 6,
+    marginBottom: 8,
+  },
+  phoneInput: {
+    flex: 1,
+    fontSize: 13,
+    padding: "6px 10px",
+    border: "1px solid #DDD5C2",
+    borderRadius: 6,
+    fontFamily: "'IBM Plex Mono', monospace",
+  },
+  phoneSaveBtn: {
+    fontSize: 12,
+    fontWeight: 600,
+    padding: "6px 12px",
+    border: "1px solid #1F3A3D",
+    borderRadius: 6,
+    background: "#1F3A3D",
+    color: "#FFFDF8",
+    cursor: "pointer",
+  },
   transcriptToggle: {
     background: "none",
     border: "none",
