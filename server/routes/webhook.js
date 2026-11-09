@@ -9,6 +9,7 @@ import {
   forwardWhatsAppMedia,
 } from "../services/whatsapp.js";
 import { translateStatusPhrase } from "../services/gemini.js";
+import { languageCodeFor } from "../services/timbre.js";
 
 const router = express.Router();
 
@@ -79,8 +80,9 @@ router.post("/", async (req, res) => {
     // own number — sending the ack there would just message himself.
     // In that case, the ack is sent later, once he links the real
     // customer number from the dashboard (see /customer-phone route).
+    let customerAck = null;
     if (!isForwardedByTechnician) {
-      const customerAck = await translateStatusPhrase("received", fields.language);
+      customerAck = await translateStatusPhrase("received", fields.language);
       await sendWhatsAppReply(From, customerAck);
     }
 
@@ -98,6 +100,15 @@ router.post("/", async (req, res) => {
       }
     } catch (technicianErr) {
       console.error(`Failed to notify technician for ${MessageSid}:`, technicianErr);
+    }
+
+    // Customer also gets a short voice reply in their OWN language (Gnani Timbre).
+    if (customerAck) {
+      try {
+        await sendWhatsAppVoiceNote(From, customerAck, languageCodeFor(fields.language));
+      } catch (voiceErr) {
+        console.error(`Failed to send customer voice reply for ${MessageSid}:`, voiceErr.message);
+      }
     }
 
     console.log(`Job card ${jobId} created and confirmed.`);

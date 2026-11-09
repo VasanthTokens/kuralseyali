@@ -1,5 +1,6 @@
 import twilio from "twilio";
 import googleTTS from "google-tts-api";
+import { synthesizeToPublicUrl } from "./timbre.js";
 
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
@@ -164,23 +165,36 @@ export async function sendSMS(toNumber, message) {
 }
 
 /**
- * Sends a Tamil voice note using Google Translate's free TTS engine.
- * Google's endpoint caps each clip at ~200 characters, so
- * getAllAudioUrls automatically splits longer text into multiple clips —
- * Twilio supports sending several mediaUrl attachments in one message.
+ * Sends a voice note on WhatsApp.
+ * First choice: Gnani Timbre (natural Indian voices, 10 languages).
+ * Backup: Google Translate's free TTS, so a Timbre problem never breaks the app.
+ * languageCode: "ta-IN" for the technician (default), or the customer's language.
  */
-export async function sendWhatsAppVoiceNote(toNumber, tamilText) {
+export async function sendWhatsAppVoiceNote(toNumber, text, languageCode = "ta-IN") {
+  try {
+    const url = await synthesizeToPublicUrl(text, languageCode);
+    await client.messages.create({
+      from: process.env.TWILIO_WHATSAPP_NUMBER,
+      to: toNumber,
+      mediaUrl: [url],
+    });
+    console.log(`Timbre voice note sent (${languageCode}).`);
+    return;
+  } catch (err) {
+    console.error("Timbre failed, using Google TTS backup:", err.message);
+  }
+
+  if (languageCode === "auto") return; // Google needs a fixed language
   const audioUrls = googleTTS
-    .getAllAudioUrls(tamilText, {
-      lang: "ta",
+    .getAllAudioUrls(text, {
+      lang: languageCode.split("-")[0],
       slow: false,
       host: "https://translate.google.com",
     })
     .map((item) => item.url);
 
   // Twilio's WhatsApp channel only delivers the first mediaUrl in an array,
-  // so long text (split into multiple ~200-char clips) must be sent as
-  // separate messages, one per clip, in order.
+  // so long text (split into ~200-char clips) is sent as separate messages.
   for (const url of audioUrls) {
     await client.messages.create({
       from: process.env.TWILIO_WHATSAPP_NUMBER,

@@ -76,24 +76,61 @@ async function downloadMediaAsBase64(mediaUrl) {
  * Calls Gemini API using x-goog-api-key header auth (works with AQ.-prefixed
  * AI Studio keys). Model: gemini-3.1-flash-lite (500 requests/day on free tier).
  */
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Models are tried in order. If the first one is overloaded (503) or does not
+// exist (404), we move on to the next one. You can change the list in .env:
+// GEMINI_MODELS=model-one,model-two,model-three
+const GEMINI_MODELS = (
+  process.env.GEMINI_MODELS || "gemini-3.5-flash-lite,gemini-3.5-flash,gemini-3.1-flash-lite"
+)
+  .split(",")
+  .map((m) => m.trim())
+  .filter(Boolean);
+
 async function callGemini(parts) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY is not set in .env file");
 
-  const response = await axios.post(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
-    { contents: [{ parts }] },
-    {
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
-    }
-  );
+  const triesPerModel = 2;
+  let lastError = null;
 
-  const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("Empty response from Gemini");
-  return text;
+  for (const model of GEMINI_MODELS) {
+    for (let attempt = 1; attempt <= triesPerModel; attempt++) {
+      try {
+        const response = await axios.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          { contents: [{ parts }] },
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": apiKey,
+            },
+          }
+        );
+
+        const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) throw new Error("Empty response from Gemini");
+        if (model !== GEMINI_MODELS[0]) console.log(`Gemini answered using backup model: ${model}`);
+        return text;
+      } catch (err) {
+        const status = err.response?.status;
+        const detail = err.response?.data?.error?.message || err.message;
+        // Short, clean error (the full axios error would print the API key in the logs)
+        lastError = new Error(status ? `Gemini API error ${status} (${model}): ${detail}` : err.message);
+
+        const temporary = [429, 500, 503, 504].includes(status);
+        if (temporary && attempt < triesPerModel) {
+          console.warn(`Gemini ${model} is busy (status ${status}). Retrying in 3s...`);
+          await sleep(3000);
+          continue;
+        }
+        console.warn(`Gemini ${model} failed (${status || "no status"}). Trying next model...`);
+        break; // go to the next model
+      }
+    }
+  }
+  throw lastError || new Error("All Gemini models failed");
 }
 
 function parseAndValidate(rawText) {
@@ -135,16 +172,87 @@ function parseAndValidate(rawText) {
 }
 
 /**
- * Handles a voice note — downloads audio and sends directly to Gemini.
- * Gemini transcribes AND extracts job details (in English + Tamil) in one call,
- * also classifying the message as "job_card" or "general".
+ * Maps the audio mime type Twilio gives us to a file extension.
+ * Gnani decides if the format is supported from the file name extension.
+ */
+function extensionFor(mimeType) {
+  const m = (mimeType || "").toLowerCase();
+  if (m.includes("ogg") || m.includes("opus")) return "ogg";
+  if (m.includes("mpeg") || m.includes("mp3")) return "mp3";
+  if (m.includes("wav")) return "wav";
+  if (m.includes("mp4") || m.includes("m4a") || m.includes("aac")) return "m4a";
+  if (m.includes("flac")) return "flac";
+  return "ogg"; // WhatsApp voice notes are ogg by default
+}
+
+/**
+ * Speech-to-text with Gnani Prisma v3.0.
+ * language_code=indic-auto lets Prisma detect the language by itself.
+ * Limits (from Gnani docs): audio up to 30 seconds, 1 request at a time.
+ * Returns { text, lang } where lang is e.g. "ta-IN" or "ml-IN".
+ */
+async function transcribeWithPrisma(base64Data, mimeType) {
+  const apiKey = process.env.GNANI_API_KEY;
+  if (!apiKey) throw new Error("GNANI_API_KEY is not set in .env file");
+
+  const audioBuffer = Buffer.from(base64Data, "base64");
+  const form = new FormData();
+  form.append(
+    "audio_file",
+    new Blob([audioBuffer], { type: mimeType || "audio/ogg" }),
+    `voice.${extensionFor(mimeType)}`
+  );
+  form.append("model", "prisma-v3.0");
+  form.append("language_code", "indic-auto");
+  form.append("format", "transcribe");
+
+  const res = await fetch("https://api.vachana.ai/stt/v3", {
+    method: "POST",
+    headers: { "X-API-Key-ID": apiKey },
+    body: form,
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.success === false) {
+    throw new Error(`Prisma STT failed (${res.status}): ${JSON.stringify(data)}`);
+  }
+  return {
+    text: (data.transcript || "").trim(),
+    lang: data.detected_language_code || null,
+  };
+}
+
+/**
+ * Handles a voice note.
+ * Step 1: Gnani Prisma listens to the audio and returns the text + language.
+ * Step 2: Gemini reads that text and makes the job card (English + Tamil).
+ * If Prisma fails for any reason, we fall back to the old way (Gemini
+ * listens to the audio itself) so the app never breaks during a demo.
  */
 export async function processVoiceNote(mediaUrl) {
   const { base64Data, mimeType } = await downloadMediaAsBase64(mediaUrl);
-  const parts = [
-    { text: EXTRACTION_PROMPT },
-    { inlineData: { data: base64Data, mimeType } },
-  ];
+
+  let prisma = null;
+  try {
+    prisma = await transcribeWithPrisma(base64Data, mimeType);
+    if (!prisma.text) throw new Error("Prisma returned an empty transcript");
+    console.log(`Prisma heard (${prisma.lang}): ${prisma.text}`);
+  } catch (err) {
+    console.error("Prisma failed, falling back to Gemini audio:", err.message);
+    prisma = null;
+  }
+
+  const parts = prisma
+    ? [
+        { text: EXTRACTION_PROMPT },
+        {
+          text:
+            `The following is the exact transcript of the customer's voice note ` +
+            `(speech recognition detected language code: ${prisma.lang || "unknown"}).\n\n${prisma.text}`,
+        },
+      ]
+    : [{ text: EXTRACTION_PROMPT }, { inlineData: { data: base64Data, mimeType } }];
+
   const rawText = await callGemini(parts);
   return parseAndValidate(rawText);
 }

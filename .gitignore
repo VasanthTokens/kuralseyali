@@ -131,3 +131,5 @@ Desktop.ini
 # Test Reports
 # ==================================================
 .nyc_output/
+# Timbre generated voice files
+server/audio/

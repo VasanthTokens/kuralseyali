@@ -4,6 +4,7 @@ dotenv.config();
 import express from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
+import { AUDIO_DIR } from "./services/timbre.js";
 
 import webhookRouter from "./routes/webhook.js";
 import jobsRouter from "./routes/jobs.js";
@@ -13,6 +14,7 @@ app.use(cors());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
+app.use("/audio", express.static(AUDIO_DIR));
 app.use("/webhook", webhookRouter);
 app.use("/api/jobs", jobsRouter);
 
